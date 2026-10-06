@@ -4,7 +4,11 @@ import { AvailabilityOverride, Schedule, Reserva, ApiResponse, DayOfWeek } from 
 import { dateUtils, scheduleUtils, phoneUtils } from "@/lib/utils";
 import { ACTIVE_RESERVATION_STATES } from "@/lib/reservaValidation";
 import { tenantQuery, withTenantScope } from "@/lib/tenant";
-import { resolvePublicTenant } from "@/lib/services/tenant-context.service";
+import {
+  resolveAdminTenant,
+  resolvePublicTenant,
+} from "@/lib/services/tenant-context.service";
+import { getSession, isSalonAdminRole } from "@/lib/session";
 import { Collections } from "@/lib/db/collections";
 import { adminHandler } from "@/lib/api/handlers";
 import { ok, created } from "@/lib/api/responses";
@@ -18,6 +22,22 @@ function getDayOfWeek(dateString: string): DayOfWeek {
   return days[date.getDay()];
 }
 
+async function resolveAvailabilitySalonId(
+  request: NextRequest
+): Promise<string> {
+  const slug = request.nextUrl.searchParams.get("slug");
+  if (slug) {
+    return (await resolvePublicTenant(request)).salonId;
+  }
+
+  const session = await getSession(request);
+  if (session && isSalonAdminRole(session.role)) {
+    return resolveAdminTenant(session);
+  }
+
+  return (await resolvePublicTenant(request)).salonId;
+}
+
 // GET: Obtiene disponibilidad para un rango de fechas
 export async function GET(request: NextRequest): Promise<NextResponse<ApiResponse<any>>> {
   try {
@@ -27,7 +47,7 @@ export async function GET(request: NextRequest): Promise<NextResponse<ApiRespons
     const daysParam = searchParams.get("days") || "30"; // Por defecto 30 días
     const telefonoParam = searchParams.get("telefono");
 
-    const { salonId } = await resolvePublicTenant(request);
+    const salonId = await resolveAvailabilitySalonId(request);
 
     const client = await clientPromise;
     const db = client.db("nailsalon");
