@@ -1,7 +1,14 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { BusinessTemplate, Reserva } from "@/lib/types";
 import { isManicureReservation } from "@/lib/reserva-template-config";
+import { dateUtils } from "@/lib/utils";
+import {
+  buildAvailabilityByDate,
+  calendarOpenDayClassName,
+  dayHasOpenSlots,
+  type DayAvailability,
+} from "@/lib/availability-calendar";
 import { Button } from "@/components/ui/Button";
 import {
   CheckIcon,
@@ -90,6 +97,40 @@ export default function ReservasTable({
     externalEstadoFilter || "todos"
   );
   const [searchExpanded, setSearchExpanded] = useState(false);
+  const [monthAvailability, setMonthAvailability] = useState<DayAvailability[]>(
+    []
+  );
+
+  const availabilityByDate = useMemo(
+    () => buildAvailabilityByDate(monthAvailability),
+    [monthAvailability]
+  );
+
+  const loadMonthAvailability = useCallback(async () => {
+    try {
+      const startDate = new Date(
+        currentMonth.getFullYear(),
+        currentMonth.getMonth(),
+        1
+      );
+      const endDate = new Date(
+        currentMonth.getFullYear(),
+        currentMonth.getMonth() + 1,
+        0
+      );
+      const res = await fetch(
+        `/api/availability?startDate=${dateUtils.formatToYYYYMMDD(startDate)}&endDate=${dateUtils.formatToYYYYMMDD(endDate)}`
+      );
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setMonthAvailability(data.data.availability);
+        }
+      }
+    } catch (error) {
+      console.error("Error cargando disponibilidad:", error);
+    }
+  }, [currentMonth]);
 
   // Sync external changes with useEffect
   useEffect(() => {
@@ -103,6 +144,11 @@ export default function ReservasTable({
       setEstadoFilter(externalEstadoFilter);
     }
   }, [externalEstadoFilter]);
+
+  useEffect(() => {
+    if (viewMode !== "month") return;
+    void loadMonthAvailability();
+  }, [viewMode, loadMonthAvailability, reservas]);
 
   // Agrupar reservas por fecha
   const reservasPorFecha = reservas.reduce(
@@ -750,12 +796,17 @@ export default function ReservasTable({
               {getMonthCalendar().map((date, index) => {
                 if (!date) return <div key={index} />;
 
-                const dateStr = date.toISOString().split("T")[0];
+                const dateStr = dateUtils.formatToYYYYMMDD(date);
                 const isCurrentMonth =
                   date.getMonth() === currentMonth.getMonth();
-                const isToday =
-                  dateStr === new Date().toISOString().split("T")[0];
+                const todayStr = dateUtils.formatToYYYYMMDD(new Date());
+                const isToday = dateStr === todayStr;
+                const isPast = dateStr < todayStr;
                 const isSelected = dateStr === selectedDate;
+                const hasOpenSlots =
+                  isCurrentMonth &&
+                  !isPast &&
+                  dayHasOpenSlots(availabilityByDate.get(dateStr));
 
                 // Obtener reservas filtradas para este día
                 const reservasDelDia = reservasPorFecha[dateStr] || [];
@@ -786,7 +837,13 @@ export default function ReservasTable({
                     ${!isCurrentMonth ? "text-gray-300 dark:text-gray-600 cursor-not-allowed" : ""}
                     ${isToday && isCurrentMonth ? "border-2 border-green-500 dark:border-green-400 text-green-600 dark:text-green-400 font-bold bg-green-50 dark:bg-green-500/10" : ""}
                     ${isSelected && !isToday && isCurrentMonth ? "border-2 border-blue-500 dark:border-blue-400 text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-500/10" : ""}
-                    ${!isSelected && !isToday && isCurrentMonth ? "hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-white cursor-pointer" : ""}
+                    ${
+                      !isSelected && !isToday && isCurrentMonth ?
+                        hasOpenSlots ?
+                          `${calendarOpenDayClassName} cursor-pointer`
+                        : "hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-white cursor-pointer"
+                      : ""
+                    }
                   `}
                   >
                     <span className="block">{date.getDate()}</span>
@@ -831,7 +888,11 @@ export default function ReservasTable({
                     d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
                   />
                 </svg>
-                <p className="text-sm">No hay reservas para este día</p>
+                <p className="text-sm">
+                  {dayHasOpenSlots(availabilityByDate.get(selectedDate)) ?
+                    "No hay reservas este día. Aún hay turnos disponibles."
+                  : "No hay reservas para este día"}
+                </p>
               </div>
             )}
 

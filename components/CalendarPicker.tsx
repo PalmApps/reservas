@@ -1,13 +1,11 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { dateUtils } from "@/lib/utils";
-
-interface AvailableSlot {
-  date: string;
-  slots: { time: string; available: boolean }[];
-  isWorkingDay: boolean;
-  clientHasBooking?: boolean;
-}
+import {
+  calendarOpenDayClassName,
+  dayHasOpenSlots,
+  type DayAvailability,
+} from "@/lib/availability-calendar";
 
 interface CalendarPickerProps {
   selectedDate: string;
@@ -26,7 +24,7 @@ export default function CalendarPicker({
   onDateSelect,
   onTimeSelect,
 }: CalendarPickerProps) {
-  const [availability, setAvailability] = useState<AvailableSlot[]>([]);
+  const [availability, setAvailability] = useState<DayAvailability[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentMonth, setCurrentMonth] = useState(new Date());
 
@@ -120,7 +118,7 @@ export default function CalendarPicker({
     const dateString = getDateString(day);
     const avail = getAvailabilityForDate(day);
 
-    if (avail && avail.isWorkingDay && avail.slots.some((s) => s.available)) {
+    if (dayHasOpenSlots(avail)) {
       onDateSelect(dateString);
       onTimeSelect(""); // Reset time selection
     }
@@ -208,10 +206,7 @@ export default function CalendarPicker({
               const isToday = dateObj.getTime() === today.getTime();
               const isPast = dateObj < today;
               const isSelected = selectedDate === dateString;
-              const hasAvailability =
-                avail &&
-                avail.isWorkingDay &&
-                avail.slots.some((s) => s.available);
+              const hasAvailability = dayHasOpenSlots(avail);
 
               return (
                 <button
@@ -224,7 +219,7 @@ export default function CalendarPicker({
                     : isPast ?
                       "cursor-not-allowed text-muted-foreground/40"
                     : hasAvailability ?
-                      "border-2 border-primary/30 bg-primary/5 text-foreground hover:border-primary/60 hover:bg-primary/10"
+                      calendarOpenDayClassName
                     : "cursor-not-allowed bg-muted text-muted-foreground"
                   } ${isToday ? "ring-2 ring-primary/50" : ""}`}
                 >
